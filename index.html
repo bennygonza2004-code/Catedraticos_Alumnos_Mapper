@@ -1,0 +1,255 @@
+HTML UPDATED 
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>API Alumnos y Catedráticos</title>
+<style>
+  :root{
+    --bg1:#0f172a; --bg2:#1e293b;
+    --card:#0b1220; --muted:#94a3b8;
+    --accent:#e67e22; --accentH:#ca640f; --white:#fff;
+    --border:#22314b;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu;
+    background: linear-gradient(135deg,var(--bg1),var(--bg2));
+    color:var(--white);
+  }
+  header{padding:24px; text-align:center}
+  header h1{margin:0; color:#f39c12}
+  .shell{
+    display:grid; grid-template-columns: 2fr 1.2fr;
+    gap:18px; padding:18px; max-width:1200px; margin:0 auto 40px;
+  }
+  .card{
+    background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.01));
+    border:1px solid var(--border); border-radius:16px; padding:16px;
+    box-shadow:0 10px 30px rgba(0,0,0,.25); backdrop-filter: blur(4px);
+  }
+  .stack{display:grid; gap:16px}
+  h2{margin:0 0 8px}
+  label{display:block; font-weight:600; margin-bottom:6px}
+  select,input,button,textarea{
+    width:100%; padding:10px 12px; border-radius:10px; border:1px solid #334155;
+    background:#0b1220; color:var(--white); font-size:14px;
+  }
+  input::placeholder{color:#94a3b8}
+  .row{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+  .btn{background:var(--accent); border:none; cursor:pointer; font-weight:700}
+  .btn:hover{background:var(--accentH)}
+  .url{background:#0b1220; border:1px dashed #334155; padding:8px 10px; border-radius:8px; color:var(--muted); font-size:12px; word-break:break-all}
+  .response{height:calc(100vh - 160px); overflow:auto; white-space:pre-wrap; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:#0b1220; border:1px solid #334155; border-radius:12px; padding:12px}
+  .pill{display:inline-block; font-size:12px; padding:2px 8px; border-radius:999px; background:#1f2937; color:#fff; margin-top:6px}
+  .divider{height:1px; background:#22314b; margin:8px 0 0}
+</style>
+</head>
+<body>
+<header><h1>Prueba de API Alumnos y Catedráticos</h1></header>
+
+<div class="shell">
+  <!-- IZQUIERDA: Constructores de requests -->
+  <div class="stack">
+
+    <div class="card">
+      <label>Selecciona tipo</label>
+      <select id="tipo" onchange="syncUI()">
+        <option value="alumno">Alumno</option>
+        <option value="catedratico">Catedrático</option>
+      </select>
+      <span class="pill" id="hint-pill">Campos: nombre, carnet, carrera, fecha_ingreso</span>
+    </div>
+
+    <!-- POST -->
+    <div class="card">
+      <h2>POST – Agregar</h2>
+      <div class="url" id="url-post"></div>
+      <div id="form-post">
+        <!-- ALUMNO -->
+        <div class="row alumno-fields">
+          <div>
+            <label>Nombre</label><input id="a_nombre_post" placeholder="Juan Pérez">
+          </div>
+          <div>
+            <label>Carnet</label><input id="a_carnet_post" placeholder="A123">
+          </div>
+        </div>
+        <div class="row alumno-fields">
+          <div>
+            <label>Carrera</label><input id="a_carrera_post" placeholder="Ingeniería">
+          </div>
+          <div>
+            <label>Fecha ingreso</label><input id="a_fecha_post" type="date">
+          </div>
+        </div>
+
+        <!-- CATEDRATICO -->
+        <div class="row cat-fields" style="display:none">
+          <div>
+            <label>Nombre</label><input id="c_nombre_post" placeholder="Lic. Pedro">
+          </div>
+          <div>
+            <label>Especialidad</label><input id="c_esp_post" placeholder="Matemática">
+          </div>
+        </div>
+        <div class="cat-fields" style="display:none">
+          <label>Correo</label><input id="c_correo_post" placeholder="pedro@uspg.edu.gt">
+        </div>
+      </div>
+      <button class="btn" onclick="enviar('POST')">Enviar POST</button>
+    </div>
+
+    <!-- GET -->
+    <div class="card">
+      <h2>GET – Consultar</h2>
+      <div class="url" id="url-get"></div>
+      <button class="btn" onclick="enviar('GET')">Enviar GET</button>
+    </div>
+
+    <!-- PUT -->
+    <div class="card">
+      <h2>PUT – Actualizar</h2>
+      <div class="url" id="url-put"></div>
+      <div id="form-put">
+        <!-- ALUMNO -->
+        <div class="row alumno-fields">
+          <div>
+            <label>ID</label><input id="a_id_put" type="number" min="1" placeholder="1">
+          </div>
+          <div>
+            <label>Nombre</label><input id="a_nombre_put" placeholder="Juan Modificado">
+          </div>
+        </div>
+        <div class="row alumno-fields">
+          <div>
+            <label>Carnet</label><input id="a_carnet_put" placeholder="A123">
+          </div>
+          <div>
+            <label>Carrera</label><input id="a_carrera_put" placeholder="Sistemas">
+          </div>
+        </div>
+        <div class="alumno-fields">
+          <label>Fecha ingreso</label><input id="a_fecha_put" type="date">
+        </div>
+
+        <!-- CATEDRATICO -->
+        <div class="row cat-fields" style="display:none">
+          <div>
+            <label>ID</label><input id="c_id_put" type="number" min="1" placeholder="1">
+          </div>
+          <div>
+            <label>Nombre</label><input id="c_nombre_put" placeholder="Lic. Pedro M.">
+          </div>
+        </div>
+        <div class="row cat-fields" style="display:none">
+          <div>
+            <label>Especialidad</label><input id="c_esp_put" placeholder="Física">
+          </div>
+          <div>
+            <label>Correo</label><input id="c_correo_put" placeholder="pedro.m@uspg.edu.gt">
+          </div>
+        </div>
+      </div>
+      <button class="btn" onclick="enviar('PUT')">Enviar PUT</button>
+    </div>
+
+    <!-- DELETE -->
+    <div class="card">
+      <h2>DELETE – Eliminar</h2>
+      <div class="url" id="url-delete"></div>
+      <label>ID a eliminar</label>
+      <input id="deleteId" type="number" min="1" placeholder="1">
+      <button class="btn" onclick="enviar('DELETE')">Enviar DELETE</button>
+    </div>
+
+  </div>
+
+  <!-- DERECHA: Respuesta -->
+  <div class="card">
+    <h2>Respuesta</h2>
+    <div class="divider"></div>
+    <div id="response" class="response">{}</div>
+  </div>
+</div>
+
+<script>
+  const base = "http://localhost/Alumnos_y_docentes/index.php?tipo=";
+
+  function url(tipo){ return base + tipo; }
+
+  function syncUI(){
+    const tipo = document.getElementById('tipo').value;
+    document.getElementById('url-post').textContent   = "POST → "   + url(tipo);
+    document.getElementById('url-get').textContent    = "GET → "    + url(tipo);
+    document.getElementById('url-put').textContent    = "PUT → "    + url(tipo);
+    document.getElementById('url-delete').textContent = "DELETE → " + url(tipo);
+
+    // Muestra/oculta campos según tipo
+    const isAlumno = (tipo === 'alumno');
+    document.querySelectorAll('.alumno-fields').forEach(e=>e.style.display = isAlumno ? '' : 'none');
+    document.querySelectorAll('.cat-fields').forEach(e=>e.style.display = isAlumno ? 'none' : '');
+    document.getElementById('hint-pill').textContent = isAlumno
+      ? "Campos: nombre, carnet, carrera, fecha_ingreso"
+      : "Campos: nombre, especialidad, correo";
+  }
+
+  function getBodyFor(tipo, metodo){
+    if (metodo === 'GET') return undefined;
+    if (metodo === 'DELETE') {
+      const id = parseInt(document.getElementById('deleteId').value || 0);
+      return JSON.stringify({ id });
+    }
+    if (tipo === 'alumno'){
+      if (metodo === 'POST'){
+        return JSON.stringify({
+          nombre:  document.getElementById('a_nombre_post').value,
+          carnet:  document.getElementById('a_carnet_post').value,
+          carrera: document.getElementById('a_carrera_post').value,
+          fecha_ingreso: document.getElementById('a_fecha_post').value
+        });
+      }else{
+        return JSON.stringify({
+          id: parseInt(document.getElementById('a_id_put').value || 0),
+          nombre:  document.getElementById('a_nombre_put').value,
+          carnet:  document.getElementById('a_carnet_put').value,
+          carrera: document.getElementById('a_carrera_put').value,
+          fecha_ingreso: document.getElementById('a_fecha_put').value
+        });
+      }
+    } else {
+      if (metodo === 'POST'){
+        return JSON.stringify({
+          nombre: document.getElementById('c_nombre_post').value,
+          especialidad: document.getElementById('c_esp_post').value,
+          correo: document.getElementById('c_correo_post').value
+        });
+      }else{
+        return JSON.stringify({
+          id: parseInt(document.getElementById('c_id_put').value || 0),
+          nombre: document.getElementById('c_nombre_put').value,
+          especialidad: document.getElementById('c_esp_put').value,
+          correo: document.getElementById('c_correo_put').value
+        });
+      }
+    }
+  }
+
+  async function enviar(metodo){
+    const tipo = document.getElementById('tipo').value;
+    const opciones = { method: metodo, headers: { 'Content-Type': 'application/json' } };
+    const body = getBodyFor(tipo, metodo);
+    if (body) opciones.body = body;
+
+    const res  = await fetch(url(tipo), opciones);
+    let data   = {};
+    try { data = await res.json(); } catch(e){ data = { error: "Respuesta no JSON" }; }
+    document.getElementById('response').textContent = JSON.stringify(data, null, 2);
+  }
+
+  // Inicial
+  syncUI();
+</script>
+</body>
+</html>

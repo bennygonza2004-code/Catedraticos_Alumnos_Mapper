@@ -1,0 +1,301 @@
+Documentación técnica – API Alumnos y Catedráticos (sin SQL)
+Generado: 2025-08-23 15:37
+# Resumen del flujo
+1) **Front Controller (`index.php`)** recibe la petición HTTP (GET/POST/PUT/DELETE) con `?tipo=alumno|catedratico`.
+2) **Router** decide qué **Controller** usar según `tipo`.
+3) **Controller** traduce HTTP → llamadas al **Service** (no hace reglas de negocio).
+4) **Service** valida con **Validator** y delega las operaciones al **Repository**.
+5) **Repository** ejecuta la operación correspondiente (sin detallar SQL).
+6) Vuelve una **respuesta JSON** al cliente (HTML/Postman).
+# Estructura de carpetas (sugerida)
+Alumnos_y_docentes/
+├─ index.php                  ← Front Controller (única entrada)
+├─ src/
+│  ├─ Infra/
+│  │  └─ Conexion.php         ← getConexion() (infraestructura)
+│  ├─ Bootstrap/
+│  │  └─ Container.php        ← ensamblado/DI
+│  ├─ Presentation/
+│  │  ├─ Http/
+│  │  │  └─ Router.php        ← enrutamiento por tipo
+│  │  └─ Controles/
+│  │     ├─ AlumnoController.php
+│  │     └─ CatedraticoController.php
+│  ├─ Domain/
+│  │  ├─ Interfaces/
+│  │  │  ├─ RepositoryInterfaces.php
+│  │  │  └─ ServiceInterfaces.php
+│  │  └─ Validadores/
+│  │     ├─ AlumnoValidator.php
+│  │     └─ CatedraticoValidator.php
+│  └─ Data/
+│     └─ Repositorio/
+│        ├─ AlumnoRepository.php
+│        └─ CatedraticoRepository.php
+└─ public/
+   └─ prueba.html             ← Cliente HTML de pruebas
+
+**Por qué así:** SRP (cada archivo una responsabilidad), DIP (controladores/servicios dependen de interfaces),
+código testeable/mantenible, y reemplazos de implementación sin romper otras capas.
+# Conexión – `getConexion()` (Infra/Conexion.php)
+<?php
+function getConexion() {
+    $conexion = new mysqli("localhost", "root", "", "alumnos_docentes");
+    if ($conexion->connect_error) {
+        http_response_code(500);
+        die(json_encode(["error" => "Conexión fallida: " . $conexion->connect_error]));
+    }
+    $conexion->set_charset("utf8mb4");
+    return $conexion;
+}
+
+- Crea el objeto de conexión.
+- Si falla: responde 500 y termina con JSON de error (útil para clientes).
+- Ajusta `utf8mb4` para caracteres especiales.
+- Devuelve el handler para inyectarlo en las demás capas.
+# Interfaces – Repositorios (Domain/Interfaces/RepositoryInterfaces.php)
+<?php
+interface ReadRepositoryInterface {
+    public function obtenerTodos();
+}
+interface WriteRepositoryInterface {
+    public function insertar($data);
+    public function actualizar($data);
+    public function eliminar($id);
+}
+interface AlumnoRepositoryInterface extends ReadRepositoryInterface, WriteRepositoryInterface {}
+interface CatedraticoRepositoryInterface extends ReadRepositoryInterface, WriteRepositoryInterface {}
+
+- Contratos genéricos (lectura/escritura) + contratos específicos por entidad.
+- Los servicios programan **contra interfaces**, no contra clases concretas.
+# Interfaces – Servicios (Domain/Interfaces/ServiceInterfaces.php)
+<?php
+interface AlumnoServiceInterface {
+    public function obtenerAlumnos();
+    public function agregarAlumnos($data);
+    public function actualizarAlumno($data);
+    public function eliminarAlumno($id);
+}
+interface CatedraticoServiceInterface {
+    public function obtenerCatedraticos();
+    public function agregarCatedraticos($data);
+    public function actualizarCatedratico($data);
+    public function eliminarCatedratico($id);
+}
+
+- Define el **qué** ofrece cada caso de uso (Alumno/Catedrático) sin atarlo a implementaciones.
+# Validadores (Domain/Validadores)
+**AlumnoValidator.php**
+<?php
+class AlumnoValidator {
+    public function validateCreate(array $a): array {
+        $errores = [];
+        if (empty($a['nombre'])) $errores[] = "nombre requerido";
+        if (empty($a['carnet'])) $errores[] = "carnet requerido";
+        if (empty($a['carrera'])) $errores[] = "carrera requerida";
+        if (empty($a['fecha_ingreso'])) $errores[] = "fecha_ingreso requerida";
+        return $errores;
+    }
+    public function validateUpdate(array $a): array {
+        $errores = [];
+        if (empty($a['id'])) $errores[] = "id requerido";
+        return array_merge($errores, $this->validateCreate($a));
+    }
+}
+
+
+**CatedraticoValidator.php**
+<?php
+class CatedraticoValidator {
+    public function validateCreate(array $c): array {
+        $errores = [];
+        if (empty($c['nombre'])) $errores[] = "nombre requerido";
+        if (empty($c['especialidad'])) $errores[] = "especialidad requerida";
+        if (empty($c['correo']) || !filter_var($c['correo'], FILTER_VALIDATE_EMAIL)) {
+            $errores[] = "correo inválido";
+        }
+        return $errores;
+    }
+    public function validateUpdate(array $c): array {
+        $errores = [];
+        if (empty($c['id'])) $errores[] = "id requerido";
+        return array_merge($errores, $this->validateCreate($c));
+    }
+}
+
+- Reglas de integridad de datos centralizadas y reusables.
+- El servicio las invoca antes de delegar la operación.
+# Controladores (Presentation/Controles)
+**AlumnoController.php**
+<?php
+require_once __DIR__ . '/../Interfaces/ServiceInterfaces.php';
+
+class AlumnoController {
+    private $servicio; // AlumnoServiceInterface
+
+    public function __construct(AlumnoServiceInterface $servicio) {
+        $this->servicio = $servicio;
+    }
+
+    public function manejar($method, $data) {
+        switch ($method) {
+            case 'GET':    return $this->servicio->obtenerAlumnos();
+            case 'POST':   return $this->servicio->agregarAlumnos($data ?? []);
+            case 'PUT':    return $this->servicio->actualizarAlumno($data ?? []);
+            case 'DELETE': return isset($data['id'])
+                                ? $this->servicio->eliminarAlumno((int)$data['id'])
+                                : ["success" => false, "errores" => ["ID no proporcionado"]];
+            default:       return ["error" => "Método no soportado"];
+        }
+    }
+}
+
+
+**CatedraticoController.php**
+<?php
+require_once __DIR__ . '/../Interfaces/ServiceInterfaces.php';
+
+class CatedraticoController {
+    private $servicio; // CatedraticoServiceInterface
+
+    public function __construct(CatedraticoServiceInterface $servicio) {
+        $this->servicio = $servicio;
+    }
+
+    public function manejar($method, $data) {
+        switch ($method) {
+            case 'GET':    return $this->servicio->obtenerCatedraticos();
+            case 'POST':   return $this->servicio->agregarCatedraticos($data ?? []);
+            case 'PUT':    return $this->servicio->actualizarCatedratico($data ?? []);
+            case 'DELETE': return isset($data['id'])
+                                ? $this->servicio->eliminarCatedratico((int)$data['id'])
+                                : ["success" => false, "errores" => ["ID no proporcionado"]];
+            default:       return ["error" => "Método no soportado"];
+        }
+    }
+}
+
+- Traducen el método HTTP en una llamada al servicio. No contienen lógica de negocio.
+# Router (Presentation/Http/Router.php)
+<?php
+class Router {
+    private $container;
+    public function __construct($container) { $this->container = $container; }
+
+    public function dispatch($tipo, $method, $data) {
+        switch ($tipo) {
+            case 'alumno':
+                return $this->container->alumnoController()->manejar($method, $data);
+            case 'catedratico':
+                return $this->container->catedraticoController()->manejar($method, $data);
+            default:
+                http_response_code(400);
+                return ["error" => "Parámetro 'tipo' no válido"];
+        }
+    }
+}
+
+- Enruta por `tipo` y delega en el controlador ya ensamblado por el Container.
+# Container (Bootstrap/Container.php)
+<?php
+require_once __DIR__ . '/../Repositorio/AlumnoRepository.php';
+require_once __DIR__ . '/../Repositorio/CatedraticoRepository.php';
+require_once __DIR__ . '/../Servicio/AlumnoService.php';
+require_once __DIR__ . '/../Servicio/CatedraticoService.php';
+require_once __DIR__ . '/../Validadores/AlumnoValidator.php';
+require_once __DIR__ . '/../Validadores/CatedraticoValidator.php';
+require_once __DIR__ . '/../Controles/AlumnoController.php';
+require_once __DIR__ . '/../Controles/CatedraticoController.php';
+
+class Container {
+    private $db;
+    public function __construct($conexion) { $this->db = $conexion; }
+
+    public function alumnoController() {
+        $repo = new AlumnoRepository($this->db);
+        $service = new AlumnoService($repo, new AlumnoValidator());
+        return new AlumnoController($service);
+    }
+
+    public function catedraticoController() {
+        $repo = new CatedraticoRepository($this->db);
+        $service = new CatedraticoService($repo, new CatedraticoValidator());
+        return new CatedraticoController($service);
+    }
+}
+
+- Fábrica/inversor de dependencias: arma Repo → Service(+Validator) → Controller.
+- Un solo lugar para cambiar implementaciones sin tocar el resto.
+# Repositorios (Data/Repositorio) – enfoque de programación
+> Manteniendo el foco en programación (sin explicar SQL):  
+- Usan **statements preparados** (`prepare`, `bind_param`, `execute`) para parametrizar entradas de usuario.
+- Separan totalmente el acceso a datos de controladores/servicios.
+- Exponen métodos con **nombres claros** (`obtenerTodos`, `insertar`, `actualizar`, `eliminar`) acordes a las interfaces.
+- Devuelven valores simples (arreglos y booleanos) para que el servicio pueda componer la respuesta al cliente.
+# Cliente HTML de pruebas (`public/prueba.html`)
+### Estilos y layout
+- Variables CSS (`:root`) para paleta; tarjetas con fondo translúcido y blur.
+- Grid de 2 columnas: izquierda (formularios), derecha (respuesta JSON).
+- Componentes reutilizables: `.card`, `.url`, `.response`, `.pill`.
+
+### Estructura
+- Selector **tipo** (`alumno`/`catedratico`) que dispara `syncUI()`.
+- Tarjetas para **POST/GET/PUT/DELETE** con URLs visibles y campos dinámicos:
+  - `.alumno-fields` ↔ `.cat-fields` se muestran/ocultan según el tipo.
+- Panel de **Respuesta** que imprime JSON bonito.
+
+### Lógica JS principal
+const base = "http://localhost/Alumnos_y_docentes/index.php?tipo=";
+function url(tipo){ return base + tipo; }
+
+- Arma la URL final concatenando `tipo`.
+
+function syncUI(){
+  const tipo = document.getElementById('tipo').value;
+  // Actualiza URLs visibles (pistas)
+  // Alterna campos de Alumno/Catedrático
+  // Actualiza el 'pill' con campos esperados
+}
+
+- Mantiene la UI sincronizada con el tipo elegido.
+
+function getBodyFor(tipo, metodo){
+  // GET → sin body
+  // DELETE → { id }
+  // POST/PUT → arma JSON con campos del formulario del tipo actual
+}
+
+- Construye el **body** adecuado para `fetch`.
+
+async function enviar(metodo){
+  // Prepara opciones fetch con Content-Type: application/json
+  // Añade body si corresponde
+  // Envía y parsea la respuesta JSON
+  // Muestra el resultado en #response
+}
+
+- Cliente genérico para los cuatro métodos. Permite probar sin Postman.
+# Notas de integración (index.php, CORS, body JSON)
+- `index.php` debe:
+  1) Crear la conexión (`getConexion()`).
+  2) Instanciar `Container` con la conexión.
+  3) Instanciar `Router` con el `Container`.
+  4) Leer `?tipo` y `$_SERVER['REQUEST_METHOD']`.
+  5) Leer el cuerpo crudo con `file_get_contents('php://input')` y decodificar JSON.
+  6) Llamar `Router->dispatch($tipo, $method, $data)` y `echo json_encode(...)`.
+
+- **CORS para pruebas en navegador:**  
+  Añadir headers `Access-Control-Allow-Origin`, `Allow-Methods`, `Allow-Headers`; responder a `OPTIONS`.
+# Buenas prácticas y razones de la separación
+- **SRP:** cada clase/archivo hace una sola cosa (conexión, validar, servir HTTP, etc.).
+- **DIP:** controladores y servicios dependen de **interfaces**, no de implementaciones concretas.
+- **Testeabilidad:** validadores y servicios se prueban con *doubles/mocks* sin tocar infra.
+- **Mantenibilidad:** cambios de implementación (p. ej., repos) se aíslan en el Container.
+- **Reusabilidad:** el mismo servicio lo podés usar desde CLI, cron o consola, no solo HTTP.
+# Anexo – Ejemplos de requests (sin entrar a SQL)
+- GET: `.../index.php?tipo=alumno`
+- POST: `.../index.php?tipo=alumno` con JSON `{ nombre, carnet, carrera, fecha_ingreso }`
+- PUT: `.../index.php?tipo=alumno` con JSON `{ id, nombre, carnet, carrera, fecha_ingreso }`
+- DELETE: `.../index.php?tipo=alumno` con JSON `{ id }`
+
+*(Cambiar `tipo=catedratico` y campos según el formulario correspondiente.)*
