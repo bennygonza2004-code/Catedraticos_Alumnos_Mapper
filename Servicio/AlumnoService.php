@@ -5,84 +5,72 @@ require_once __DIR__ . '/../Interfaces/ServiceInterfaces.php';
 require_once __DIR__ . '/../Interfaces/RepositoryInterfaces.php';
 require_once __DIR__ . '/../Validadores/AlumnoValidator.php';
 require_once __DIR__ . '/../Entidades/Alumno.php';
+require_once __DIR__ . '/../DTOs/AlumnoDTO.php';
+require_once __DIR__ . '/../Mappers/AlumnoMapper.php';
 
-class AlumnoService implements AlumnoServiceInterface {
-    private AlumnoRepositoryInterface $repo;
-    private AlumnoValidator $validator;
+class AlumnoService implements AlumnoServiceInterface
+{
+    public function __construct(
+        private AlumnoRepositoryInterface $repo,
+        private AlumnoValidator $validator,
+        private AlumnoMapper $mapper = new AlumnoMapper()
+    ) {}
 
-    public function __construct(AlumnoRepositoryInterface $repo, AlumnoValidator $validator) {
-        $this->repo = $repo;
-        $this->validator = $validator;
-    }
-
-    /** @return array<int, array<string,mixed>> */
-    public function obtenerAlumnos() {
-        $entidades = $this->repo->obtenerTodos();
+    /** @return AlumnoDTO[] */
+    public function obtenerAlumnos(): array
+    {
+        $entidades = $this->repo->obtenerTodos(); // Alumno[]
         $out = [];
         foreach ($entidades as $a) {
-            $out[] = $this->toEntityArray($a);
+            $out[] = $this->mapper->toDTO($a);
         }
         return $out;
     }
 
-    /** @param mixed $data @return array{success: bool, errores?: array<int,string>} */
-    public function agregarAlumnos($data) {
-        $lista = isset($data[0]) ? $data : [$data];
-        foreach ($lista as $a) {
-            $errores = $this->validator->validateCreate($a);
-            if ($errores) return ["success" => false, "errores" => $errores];
-
-            $entidad = $this->fromArray($a);         // ← array -> Entidad
-            if (!$this->repo->insertar($entidad)) {  // ← repo recibe Entidad
-                return ["success" => false];
-            }
+    public function agregarAlumno(AlumnoDTO $dto): AlumnoDTO
+    {
+        // Validación sobre DTO
+        $errores = $this->validator->validateCreate($dto->toArray());
+        if ($errores) {
+            throw new InvalidArgumentException('Errores de validación: '.implode(', ', $errores));
         }
-        return ["success" => true];
+
+        // DTO -> Entidad -> persistencia
+        $entidad = $this->mapper->fromDTO($dto);
+        $row     = $this->mapper->mapEntityToArray($entidad);
+
+        // Insertar
+        $ok = $this->repo->insertar($row);
+        if (!$ok) {
+            throw new RuntimeException('No se pudo insertar Alumno');
+        }
+
+        // Tip: si tu repo devolviera el ID, acá lo asignás. (mysqli->insert_id)
+        // Re-lee el registro recién insertado si necesitás el ID o versión canónica.
+        // Para simpleza, devolvemos el mismo DTO.
+        return $dto;
     }
 
-    /** @param mixed $data @return array{success: bool, errores?: array<int,string>} */
-    public function actualizarAlumno($data) {
-        $errores = $this->validator->validateUpdate($data);
-        if ($errores) return ["success" => false, "errores" => $errores];
+    public function actualizarAlumno(AlumnoDTO $dto): AlumnoDTO
+    {
+        $errores = $this->validator->validateUpdate($dto->toArray());
+        if ($errores) {
+            throw new InvalidArgumentException('Errores de validación: '.implode(', ', $errores));
+        }
 
-        $entidad = $this->fromArray($data);          // ← array -> Entidad
-        return ["success" => (bool)$this->repo->actualizar($entidad)];
+        $entidad = $this->mapper->fromDTO($dto);
+        $row     = $this->mapper->mapEntityToArray($entidad);
+
+        $ok = $this->repo->actualizar($row);
+        if (!$ok) {
+            throw new RuntimeException('No se pudo actualizar Alumno');
+        }
+
+        return $dto;
     }
 
-    /** @return array{success: bool} */
-    public function eliminarAlumno($id) {
-        return ["success" => (bool)$this->repo->eliminar($id)];
-    }
-
-    // ---------- helpers ----------
-
-    private function toEntityArray(Alumno $a): array {
-        return [
-            'id'            => $a->id,
-            'nombre'        => $a->nombre,
-            'carnet'        => $a->carnet,
-            'carrera'       => $a->carrera,
-            'fecha_ingreso' => $a->fecha_ingreso,
-        ];
-    }
-
-    /** @param array<string,mixed> $a */
-    private function fromArray(array $a): Alumno {
-        $fecha = $this->normalizeFecha((string)($a['fecha_ingreso'] ?? ''));
-        return new Alumno(
-            isset($a['id']) ? (int)$a['id'] : null,
-            (string)($a['nombre'] ?? ''),
-            (string)($a['carnet'] ?? ''),
-            (string)($a['carrera'] ?? ''),
-            $fecha
-        );
-    }
-
-    /** Acepta 'YYYY-MM-DD' o 'DD/MM/YYYY' y devuelve 'YYYY-MM-DD' */
-    private function normalizeFecha(string $f): string {
-        $f = trim($f);
-        if ($f === '') return '';
-        $dt = \DateTime::createFromFormat('Y-m-d', $f) ?: \DateTime::createFromFormat('d/m/Y', $f);
-        return $dt ? $dt->format('Y-m-d') : $f;
+    public function eliminarAlumno(int $id): bool
+    {
+        return (bool)$this->repo->eliminar($id);
     }
 }

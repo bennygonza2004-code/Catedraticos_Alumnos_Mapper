@@ -42,7 +42,7 @@ final class Container {
         // Mapper por interfaz
         $mapper  = new AlumnoMapper();                       // implements EntityMapperInterface
         $repo    = new AlumnoRepository($this->db, $mapper); // repo depende de la interfaz
-        $service = new AlumnoService($repo, new AlumnoValidator());
+        $service = new AlumnoService($repo, new AlumnoValidator(), $mapper); // ← cambio
 
         $this->alumnoCtrl = new AlumnoController($service);
         return $this->alumnoCtrl;
@@ -53,7 +53,7 @@ final class Container {
 
         $mapper  = new CatedraticoMapper();
         $repo    = new CatedraticoRepository($this->db, $mapper);
-        $service = new CatedraticoService($repo, new CatedraticoValidator());
+        $service = new CatedraticoService($repo, new CatedraticoValidator(), $mapper); // ← cambio
 
         $this->catedraticoCtrl = new CatedraticoController($service);
         return $this->catedraticoCtrl;

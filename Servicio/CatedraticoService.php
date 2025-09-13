@@ -5,73 +5,64 @@ require_once __DIR__ . '/../Interfaces/ServiceInterfaces.php';
 require_once __DIR__ . '/../Interfaces/RepositoryInterfaces.php';
 require_once __DIR__ . '/../Validadores/CatedraticoValidator.php';
 require_once __DIR__ . '/../Entidades/Catedratico.php';
+require_once __DIR__ . '/../DTOs/CatedraticoDTO.php';
+require_once __DIR__ . '/../Mappers/CatedraticoMapper.php';
 
-class CatedraticoService implements CatedraticoServiceInterface {
-    private CatedraticoRepositoryInterface $repo;
-    private CatedraticoValidator $validator;
+class CatedraticoService implements CatedraticoServiceInterface
+{
+    public function __construct(
+        private CatedraticoRepositoryInterface $repo,
+        private CatedraticoValidator $validator,
+        private CatedraticoMapper $mapper = new CatedraticoMapper()
+    ) {}
 
-    public function __construct(CatedraticoRepositoryInterface $repo, CatedraticoValidator $validator) {
-        $this->repo = $repo;
-        $this->validator = $validator;
-    }
-
-    /** @return array<int, array<string,mixed>> */
-    public function obtenerCatedraticos() {
+    /** @return CatedraticoDTO[] */
+    public function obtenerCatedraticos(): array
+    {
         $entidades = $this->repo->obtenerTodos();
         $out = [];
         foreach ($entidades as $c) {
-            $out[] = $this->toEntityArray($c);
+            $out[] = $this->mapper->toDTO($c);
         }
         return $out;
     }
 
-    /** @param mixed $data @return array{success: bool, errores?: array<int,string>} */
-    public function agregarCatedraticos($data) {
-        $lista = isset($data[0]) ? $data : [$data];
-        foreach ($lista as $c) {
-            $errores = $this->validator->validateCreate($c);
-            if ($errores) return ["success" => false, "errores" => $errores];
-
-            $entidad = $this->fromArray($c);
-            if (!$this->repo->insertar($entidad)) {
-                return ["success" => false];
-            }
+    public function agregarCatedratico(CatedraticoDTO $dto): CatedraticoDTO
+    {
+        $errores = $this->validator->validateCreate($dto->toArray());
+        if ($errores) {
+            throw new InvalidArgumentException('Errores de validación: '.implode(', ', $errores));
         }
-        return ["success" => true];
+
+        $entidad = $this->mapper->fromDTO($dto);
+        $row     = $this->mapper->mapEntityToArray($entidad);
+
+        $ok = $this->repo->insertar($row);
+        if (!$ok) {
+            throw new RuntimeException('No se pudo insertar Catedrático');
+        }
+        return $dto;
     }
 
-    /** @param mixed $data @return array{success: bool, errores?: array<int,string>} */
-    public function actualizarCatedratico($data) {
-        $errores = $this->validator->validateUpdate($data);
-        if ($errores) return ["success" => false, "errores" => $errores];
+    public function actualizarCatedratico(CatedraticoDTO $dto): CatedraticoDTO
+    {
+        $errores = $this->validator->validateUpdate($dto->toArray());
+        if ($errores) {
+            throw new InvalidArgumentException('Errores de validación: '.implode(', ', $errores));
+        }
 
-        $entidad = $this->fromArray($data);
-        return ["success" => (bool)$this->repo->actualizar($entidad)];
+        $entidad = $this->mapper->fromDTO($dto);
+        $row     = $this->mapper->mapEntityToArray($entidad);
+
+        $ok = $this->repo->actualizar($row);
+        if (!$ok) {
+            throw new RuntimeException('No se pudo actualizar Catedrático');
+        }
+        return $dto;
     }
 
-    /** @return array{success: bool} */
-    public function eliminarCatedratico($id) {
-        return ["success" => (bool)$this->repo->eliminar($id)];
-    }
-
-    // ---------- helpers ----------
-
-    private function toEntityArray(Catedratico $c): array {
-        return [
-            'id'           => $c->id,
-            'nombre'       => $c->nombre,
-            'especialidad' => $c->especialidad,
-            'correo'       => $c->correo,
-        ];
-    }
-
-    /** @param array<string,mixed> $c */
-    private function fromArray(array $c): Catedratico {
-        return new Catedratico(
-            isset($c['id']) ? (int)$c['id'] : null,
-            (string)($c['nombre'] ?? ''),
-            (string)($c['especialidad'] ?? ''),
-            (string)($c['correo'] ?? '')
-        );
+    public function eliminarCatedratico(int $id): bool
+    {
+        return (bool)$this->repo->eliminar($id);
     }
 }

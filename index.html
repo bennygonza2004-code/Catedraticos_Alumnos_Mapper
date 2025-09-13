@@ -1,4 +1,4 @@
-HTML UPDATED 
+HTML UPDATED
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -49,9 +49,11 @@ HTML UPDATED
 <body>
 <header><h1>Prueba de API Alumnos y Catedráticos</h1></header>
 
+
 <div class="shell">
   <!-- IZQUIERDA: Constructores de requests -->
   <div class="stack">
+
 
     <div class="card">
       <label>Selecciona tipo</label>
@@ -61,6 +63,7 @@ HTML UPDATED
       </select>
       <span class="pill" id="hint-pill">Campos: nombre, carnet, carrera, fecha_ingreso</span>
     </div>
+
 
     <!-- POST -->
     <div class="card">
@@ -85,6 +88,7 @@ HTML UPDATED
           </div>
         </div>
 
+
         <!-- CATEDRATICO -->
         <div class="row cat-fields" style="display:none">
           <div>
@@ -101,12 +105,14 @@ HTML UPDATED
       <button class="btn" onclick="enviar('POST')">Enviar POST</button>
     </div>
 
+
     <!-- GET -->
     <div class="card">
       <h2>GET – Consultar</h2>
       <div class="url" id="url-get"></div>
       <button class="btn" onclick="enviar('GET')">Enviar GET</button>
     </div>
+
 
     <!-- PUT -->
     <div class="card">
@@ -134,6 +140,7 @@ HTML UPDATED
           <label>Fecha ingreso</label><input id="a_fecha_put" type="date">
         </div>
 
+
         <!-- CATEDRATICO -->
         <div class="row cat-fields" style="display:none">
           <div>
@@ -155,6 +162,7 @@ HTML UPDATED
       <button class="btn" onclick="enviar('PUT')">Enviar PUT</button>
     </div>
 
+
     <!-- DELETE -->
     <div class="card">
       <h2>DELETE – Eliminar</h2>
@@ -164,7 +172,9 @@ HTML UPDATED
       <button class="btn" onclick="enviar('DELETE')">Enviar DELETE</button>
     </div>
 
+
   </div>
+
 
   <!-- DERECHA: Respuesta -->
   <div class="card">
@@ -174,10 +184,13 @@ HTML UPDATED
   </div>
 </div>
 
+
 <script>
   const base = "http://localhost/Alumnos_y_docentes/index.php?tipo=";
 
+
   function url(tipo){ return base + tipo; }
+
 
   function syncUI(){
     const tipo = document.getElementById('tipo').value;
@@ -185,6 +198,7 @@ HTML UPDATED
     document.getElementById('url-get').textContent    = "GET → "    + url(tipo);
     document.getElementById('url-put').textContent    = "PUT → "    + url(tipo);
     document.getElementById('url-delete').textContent = "DELETE → " + url(tipo);
+
 
     // Muestra/oculta campos según tipo
     const isAlumno = (tipo === 'alumno');
@@ -194,6 +208,7 @@ HTML UPDATED
       ? "Campos: nombre, carnet, carrera, fecha_ingreso"
       : "Campos: nombre, especialidad, correo";
   }
+
 
   function getBodyFor(tipo, metodo){
     if (metodo === 'GET') return undefined;
@@ -236,11 +251,13 @@ HTML UPDATED
     }
   }
 
+
   async function enviar(metodo){
     const tipo = document.getElementById('tipo').value;
     const opciones = { method: metodo, headers: { 'Content-Type': 'application/json' } };
     const body = getBodyFor(tipo, metodo);
     if (body) opciones.body = body;
+
 
     const res  = await fetch(url(tipo), opciones);
     let data   = {};
@@ -248,8 +265,104 @@ HTML UPDATED
     document.getElementById('response').textContent = JSON.stringify(data, null, 2);
   }
 
+
   // Inicial
   syncUI();
 </script>
 </body>
 </html>
+
+
+
+index.php 
+<?php
+// ===== Salida y CORS =====
+header('Content-Type: application/json; charset=utf-8');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { exit; }
+
+
+ob_start();
+ini_set('display_errors', '0');    // no mezclar errores con JSON
+error_reporting(E_ALL);
+
+
+$debug = isset($_GET['debug']);
+
+
+// ===== Capturar FATALES (500) y devolverlos como JSON =====
+register_shutdown_function(function () use ($debug) {
+  $e = error_get_last();
+  if ($e && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
+    while (ob_get_level() > 0) ob_end_clean();
+    http_response_code(500);
+    echo json_encode([
+      'fatal'   => true,
+      'type'    => $e['type'],
+      'file'    => $e['file'],
+      'line'    => $e['line'],
+      'message' => $e['message'],
+    ], JSON_UNESCAPED_UNICODE);
+  }
+});
+
+
+// ===== Carga núcleo (TUS rutas reales) =====
+require_once __DIR__ . '/Config/conexion.php';
+require_once __DIR__ . '/Core/Container.php';
+require_once __DIR__ . '/Core/Router.php';
+
+
+// ===== Construcción =====
+$db        = getConexion();
+$container = new Container($db);
+$router    = new Router($container);
+
+
+// ===== Entrada =====
+$tipo   = isset($_GET['tipo']) ? strtolower(trim($_GET['tipo'])) : '';
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+
+$raw  = file_get_contents('php://input');
+$data = null;
+if ($raw !== false && strlen($raw)) {
+  $tmp = json_decode($raw, true);
+  if (json_last_error() === JSON_ERROR_NONE) $data = $tmp;
+}
+if ($data === null && !empty($_POST)) $data = $_POST; // fallback form-data
+
+
+try {
+  $result = $router->dispatch($tipo, $method, $data);
+  if ($result === null) $result = ['error' => 'Sin contenido'];
+
+
+  $stray = ob_get_clean();      // lo que se imprimió por accidente
+  while (ob_get_level() > 0) ob_end_clean();
+
+
+  if ($debug) {
+    echo json_encode([
+      '_debug' => [
+        'method' => $method,
+        'tipo'   => $tipo,
+        'raw'    => $raw,
+        'data'   => $data,
+        'stray'  => $stray,
+      ],
+      'result' => $result,
+    ], JSON_UNESCAPED_UNICODE);
+  } else {
+    echo json_encode($result, JSON_UNESCAPED_UNICODE);
+  }
+} catch (Throwable $e) {
+  while (ob_get_level() > 0) ob_end_clean();
+  http_response_code(500);
+  echo json_encode([
+    'error'   => 'Excepción en servidor',
+    'message' => $e->getMessage(),
+  ], JSON_UNESCAPED_UNICODE);
+}
